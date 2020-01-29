@@ -1,0 +1,10 @@
+# C# compiled executables
+*.exe
+
+# vscode directories
+.vscode/*
+*/.vscode
+*/.vscode/*
+
+# Operating System - Mac OS X
+.DS_Store
