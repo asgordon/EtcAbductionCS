@@ -27,6 +27,7 @@ namespace EtcAbduction
     -h, --help                print this help menu
     -f, --forward             forward-chain on observations
     -g, --graph               generate graph in dot format
+    -t, --text NAME           generate text using knowledgebase file name
     -d, --depth NUMBER        backchaining depth (default = 5)
     -s, --solution NUMBER     rank of solution to graph (default = 1)
     -a, --all                 generate all solutions
@@ -44,6 +45,7 @@ namespace EtcAbduction
         public bool Help_flag {get; set;}
         public bool Forward_flag {get; set;}
         public bool Graph_flag {get; set;}
+        public string Text_path {get;set;}
         public int Depth {get; set;}
         public bool All_flag {get; set;}
         public int Solution {get; set;}
@@ -101,6 +103,11 @@ namespace EtcAbduction
                 {
                     this.Graph_flag = true;
                 }
+                else if (args[i] == "-t" || args[i] == "--text")
+                {
+                    i += 1;
+                    this.Text_path = args[i];
+                }
                 else if (args[i] == "-a" || args[i] == "--all")
                 {
                     this.All_flag = true;
@@ -157,6 +164,7 @@ namespace EtcAbduction
             // read buffers
             var buffer_i = "";
             var buffer_k = "";
+            var buffer_t = "";
 
             if (args.Input_path != null) 
             {
@@ -252,6 +260,18 @@ namespace EtcAbduction
                             {
                                 reslist.Add($"({String.Join(" ",entailed.Select(e => e.Repr()))})");   
                             }                           
+                        }
+                    }
+                    else if (args.Text_path != null)
+                    {
+                        buffer_t = File.ReadAllText(args.Text_path);
+                        var tkb = new Knowledgebase();
+                        var tobs = tkb.Add(buffer_t);  
+                        TextGenerator tg = new TextGenerator(kb, tkb, tobs);        
+                        foreach (List<Literal> solution in all_solutions)
+                        {
+                            //reslist.Add(tg.Shortest(solution, obs)); // just the shortest                      
+                            reslist.Add($"{String.Join(" || ",tg.AllTexts(solution, obs))}"); // all                            
                         }
                     }
                     else 
