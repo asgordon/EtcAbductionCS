@@ -134,7 +134,10 @@ namespace EtcAbduction
                         newresult.Add(previous + realization);
                     }
                 }
-                res = newresult;
+                if (realizations.Count > 0) 
+                {
+                    res = newresult;
+                }
             }
             
 
