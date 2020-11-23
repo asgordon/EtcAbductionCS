@@ -1,18 +1,9 @@
 // textGenerator.cs - 
 // Andrew S. Gordon
 // September 2019
+// November 2020
 
-// Core Functionality:
-// - Pronouns, Common nouns, Proper Nouns
-
-// Currently realizers:
-// ShallowCauses: Just realize the immediate factors that explain each observable.
-
-// Todo:
-// 1. Proper and common name variations after first mention
-// 2. Correct determiner for common nouns
-// 3. Roles in place of common nouns
-
+// A template-based text generation utility for EtcAbduction.
 
 using System;
 using System.Collections.Generic;
@@ -22,15 +13,14 @@ namespace EtcAbduction
 {
     public class TextGenerator 
     {
-
         public Knowledgebase Kb {get; set;}
         public Knowledgebase Tkb {get; set;}
         public Dictionary<String,List<String>> ProperNouns {get; set;}
-        public Dictionary<String,int> ProperNameMentions {get; set;}
         public Dictionary<String,List<String>> CommonNouns {get; set;}
-        public Dictionary<String,int> CommonNameMentions {get; set;}
         public Dictionary<String,String> Pronouns {get; set;}
 
+        // Base class constructor is tied to specific knowledge base and temlate axioms
+    
         public TextGenerator(Knowledgebase kb, Knowledgebase tkb, List<Literal> tobs) {
             this.Kb = kb;
             this.Tkb = tkb;
@@ -63,87 +53,84 @@ namespace EtcAbduction
                 }
             }
 
+        }   
+        
+        // Get the structure of the given solution
+        List<Entailment> GetEntailments(List<Literal> solution)
+        {
+            return Forward.Entailments(Kb, solution);
         }
 
-        public string Shortest(List<Literal> solution, List<Literal> obs)
+        // Select which literals in the graph to use for text generation
+        List<Literal> GetShallowCauses(List<Entailment> entailments, List<Literal> solution, List<Literal> observations)
         {
-            List<String> allTexts = AllTexts(solution, obs);
-            allTexts.Sort((a, b) => a.Length.CompareTo(b.Length));
-            return allTexts[0];
-        }
-
-        public string Longest(List<Literal> solution, List<Literal> obs)
-        {
-            List<String> allTexts = AllTexts(solution, obs);
-            allTexts.Sort((a, b) => b.Length.CompareTo(a.Length)); // reversed
-            return allTexts[0];
-        }
-
-        public List<String> AllTexts(List<Literal> solution, List<Literal> obs)
-        {
-            var entailments = Forward.Entailments(Kb, solution);
-
-            List<String> res = new List<String>();
-
-            res.AddRange(ShallowCauses(entailments, solution, obs));
-
-            return res;
-        }
-
-        public List<String> ShallowCauses(List<Entailment> entailments, List<Literal> solution, List<Literal> obs)
-        {
-            List<String> res = new List<String>(){""}; // start with one empty string.
-
-            // 1 iterate through each observation, in order
-            foreach (Literal ob in obs)
+            var result = new List<Literal>();
+            foreach (Literal ob in observations)
             {
-            // 2 locate the etc literal that is part of its direct antecedent
                 var entailment = entailments.First<EtcAbduction.Entailment>(ent => ob.Equals(ent.Entailed));
                 var etc = entailment.Triggers.First<EtcAbduction.Literal>(lit => solution.Contains(lit));
+                result.Add(etc);
+            }
+            return result;
+        }
 
-            // 3 forward chain on only this one etc literal to find possible realizations
-                var textEntailments = Forward.Entailments(Tkb, new List<Literal>() {etc});
-                //List<Literal> textLiterals = new List<Literal>();
-                List<List<String>> realizations = new List<List<String>>();
+        // Apply the text knowledgebase to the selected literals, with the resulting list containing lists of variants for each input literal
+        List<List<Literal>> GetTextLiterals(List<Literal> content)
+        {
+            var result = new List<List<Literal>>(); // A list of variations for each content literal
+            foreach (Literal contentLiteral in content)
+            {
+                var variations = new List<Literal>();
+                var textEntailments = Forward.Entailments(Tkb, new List<Literal>() {contentLiteral});
                 foreach (Entailment textEntailment in textEntailments)
                 {
                     Literal textLiteral = textEntailment.Entailed;
-                    if (textLiteral.Predicate == "text") // only use full causal realizations (not textc)
+                    if (textLiteral.Predicate == "text") // what about textc?
                     {
-                        realizations.Add(textLiteral.Terms.Select(x => x.Repr()).ToList());
-                    }                   
-                }
-            // 4 handle any special directives in the realizations, e.g. pronouns, names
-                for (int i = 0; i < realizations.Count; i++)
-                {
-                    // first do pronouns
-                    realizations[i] = SwapPronouns(realizations[i]);
-                    // then proper nouns
-                    realizations[i] = SwapProperNouns(realizations[i]); 
-                    // then common nouns
-                    realizations[i] = SwapCommonNouns(realizations[i]);
-                }
-
-            // 5 replace the res list with expanded variations, for each possible realization.
-                List<String> newresult = new List<String>();
-                foreach (List<String> item in realizations)
-                {
-                    String realization = Cleanup(String.Join(" ",item));
-                    foreach (String previous in res)
-                    {
-                        newresult.Add(previous + realization);
+                        variations.Add(textLiteral);
                     }
                 }
-                if (realizations.Count > 0) 
-                {
-                    res = newresult;
-                }
+                result.Add(variations);
             }
-            
-
-            return res;
+            return result;
+        }
+        
+        // Convert each text literal to a list of strings (a "realization")
+        List<List<List<string>>> ConvertToRealizations(List<List<Literal>> textLiterals)
+        {
+            var result = new List<List<List<string>>>();
+            foreach (List<Literal> variations in textLiterals)
+            {
+                var options = new List<List<string>>();
+                foreach (Literal variation in variations)
+                {
+                    options.Add(variation.Terms.Select(x => x.Repr()).ToList());
+                }
+                result.Add(options);
+            }
+            return result;
         }
 
+        // Rewrite each list of strings (realization) by replacing pronouns, common nouns, and proper nouns
+        List<List<List<string>>> RewriteRealizations(List<List<List<string>>> listOfOptionsOfRealizations)
+        {
+            var result = new List<List<List<string>>>();
+            foreach (List<List<string>> options in listOfOptionsOfRealizations)
+            {
+                 var newOptions = new List<List<string>>();
+                 foreach (List<string> realization in options)
+                 {
+                     var newRealization = SwapPronouns(realization);
+                     newRealization = SwapProperNouns(newRealization);
+                     newRealization = SwapCommonNouns(newRealization);
+                     newOptions.Add(newRealization);
+                 }
+                 result.Add(newOptions);
+            }
+            return result;
+        }
+
+        // Swap prounouns base don the prunoun class
         public List<String> SwapPronouns(List<String> realization)
         {
             for (int i = 0; i < realization.Count; i++)
@@ -218,6 +205,7 @@ namespace EtcAbduction
 
         }
 
+        // Swap constants for proper nouns based on any names provided
         public List<String> SwapProperNouns(List<String> realization)
         {
             for (int i = 0; i < realization.Count; i++)
@@ -231,6 +219,7 @@ namespace EtcAbduction
             return realization;
         }
 
+        // Swap constants for common nouns based on any names provided
         public List<String> SwapCommonNouns(List<String> realization)
         {
             String determiner = "a";
@@ -245,6 +234,24 @@ namespace EtcAbduction
             return realization;
         }
 
+
+        // Convert each realization to a single string / sentence.
+        List<List<string>> RewriteAsSentences(List<List<List<string>>> listOfOptionsOfRealizations)
+        {
+            var result = new List<List<string>>();
+            foreach (List<List<string>> options in listOfOptionsOfRealizations)
+            {
+                var newOptions = new List<string>();
+                foreach (List<string> parts in options)
+                {
+                    newOptions.Add(Cleanup(String.Join(" ",parts)));
+                }
+                result.Add(newOptions);
+            }
+            return result;
+        }
+
+        // Cleanup function applied to each string to ensure it looks like a pleasant sentence.
         public String Cleanup(String messy)
         {
             messy = messy.Trim();
@@ -258,5 +265,71 @@ namespace EtcAbduction
             }
             return messy.First().ToString().ToUpper() + messy.Substring(1) + ". "; // final space
         }
+
+        // Compose sentences into a documents, with a different variant for every available option
+        List<string> ComposeVariations(List<List<string>> listOfOptionsOfSentences)
+        {
+            var variations = new List<string>(){ "" }; // one empty realization to start
+            foreach (List<string> options in listOfOptionsOfSentences)
+            {
+                foreach (string option in options)
+                {
+                    var newVariations = new List<string>();
+                    foreach (string previous in variations)
+                    {
+                        newVariations.Add(previous + option);
+                    }
+                    variations = newVariations;
+                }
+            }
+            return variations;
+        }
+
+        // Bundle the core generation functions into a single call
+        List<string> GenerateVariations(List<Literal> content)
+        {
+            var textLiterals = GetTextLiterals(content); // requires textkb
+            var realizations = ConvertToRealizations(textLiterals);
+            var rewrites = RewriteRealizations(realizations); // requires nouns
+            var sentences = RewriteAsSentences(rewrites);
+            var variations = ComposeVariations(sentences);
+            return variations;
+        }
+
+        // Provide a convienient generate function that provides a couple of options.
+        public string Generate(List<Literal> solution, List<Literal> observations, string selector = "shallow_causes", string ranker = "longest")
+        {
+            // Select content
+            List<Literal> content;
+            switch (selector)
+            {
+                case "shallow_causes":
+                default:
+                    content = GetShallowCauses(GetEntailments(solution), solution, observations);
+                    break;
+            }
+
+            // Generate variations
+            List<String> variations = GenerateVariations(content);
+
+            // Rank variations
+            switch (ranker)
+            {
+                case "all":
+                    variations = new List<String> {  String.Join("\n",variations) };
+                    break;
+                case "shortest":
+                    variations.Sort((a, b) => a.Length.CompareTo(b.Length));
+                    break;
+                case "longest":
+                default:
+                    variations.Sort((a, b) => b.Length.CompareTo(a.Length)); // reversed
+                    break;
+            }
+
+            // Return highest-ranked variation
+            return variations[0];
+        }
+
     }
 }

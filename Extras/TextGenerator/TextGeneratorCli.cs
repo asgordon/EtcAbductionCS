@@ -1,6 +1,7 @@
 // text generator cli.cs 
 // Andrew S. Gordon
 // June 2020
+// November 2020
 
 using System;
 using System.IO;
@@ -18,6 +19,7 @@ namespace EtcAbduction
     Options:
     -i, --in NAME             set input file name
     -k, --knowledgebase NAME  set knowledgebase file name
+    -r, --ranker OPTION       set the ranker to shortest, longest, or all
     -t, --templates NAME      set the templates file name
     -s, --solution NAME       set the solution file name
     -o, --out NAME            set output file name
@@ -32,12 +34,15 @@ namespace EtcAbduction
         public string Solution_path {get; set;}
         public string Output_path {get; set;}
 
+        public string Ranker {get; set;}
+
         public bool Help_flag {get; set;}
 
         public TextGeneratorCli(String[] args) 
         {
 
             this.Help_flag = false;
+            this.Ranker = "default";
 
             for (int i = 0; i < args.Length; i++) 
             {
@@ -55,6 +60,11 @@ namespace EtcAbduction
                 {
                     i += 1;
                     this.Templates_path = args[i];
+                }
+                else if (args[i] == "-r" || args[i] == "--ranker")
+                {
+                    i += 1;
+                    this.Ranker = args[i];
                 }
                 else if (args[i] == "-s" || args[i] == "--solution")
                 {
@@ -129,8 +139,8 @@ namespace EtcAbduction
 
 
             var result = "";    
-            //result = tg.Longest(solution, obs); // just the shortest   
-            result = $"{String.Join(" || ",tg.AllTexts(solution, obs))}"; // all                            
+            
+            result = $"{String.Join(" || ",tg.Generate(solution, obs, ranker: args.Ranker ))}";                         
         
             // output
             if (args.Output_path != null)
