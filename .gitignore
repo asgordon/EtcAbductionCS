@@ -1,6 +1,9 @@
 # C# compiled executables
 *.exe
 
+# shell scripts
+*.sh
+
 # vscode directories
 .vscode/*
 */.vscode
