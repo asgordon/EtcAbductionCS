@@ -40,7 +40,10 @@ namespace EtcAbduction
                 res = ContextualEtcAbduction(obs.GetRange(window_start, window_end - window_start), kb, previous, maxdepth, b, iteration);
                 previous = res;
             }
-            previous.RemoveRange(n, previous.Count - n); // truncate excess
+            if (previous.Count > n) // too many results
+            {
+                previous.RemoveRange(n, previous.Count - n); // truncate excess
+            }
             return previous;
 
         }
