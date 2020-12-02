@@ -30,14 +30,13 @@ namespace EtcAbduction
             {
                 previous.Add(skolemize_with_prefix(s, pre));
             }
-
             // then iterate through remaining windows
             while (window_end < obs.Count) // some remain
             {
                 iteration += 1; //advance
                 window_start = window_end;
                 window_end = Math.Min(w * iteration, obs.Count);
-                res = ContextualEtcAbduction(obs.GetRange(window_start, window_end - window_start), kb, previous, maxdepth, b, iteration);
+                res = ContextualEtcAbduction(obs.GetRange(0, window_end), obs.GetRange(window_start, window_end - window_start), kb, previous, maxdepth, b, iteration);
                 previous = res;
             }
             if (previous.Count > n) // too many results
@@ -63,7 +62,7 @@ namespace EtcAbduction
 
         private static List<List<Literal>> ContextualAndOrLeaflists(List<Literal> remaining, Knowledgebase kb, int depth, List<Literal> context, List<Literal> antecedents, List<Literal> assumptions)
         {
-            if (depth == 0 && antecedents.Count == 0) // fail with empty list
+            if (depth == 0 && antecedents.Count > 0) // fail with empty list (!)
             {
                 return new List<Solution>(); 
             }
@@ -71,7 +70,6 @@ namespace EtcAbduction
             {  
                 if (antecedents.Count == 0) // found one
                 {
-                    
                     return new List<Solution>() { assumptions }; // list of lists
                 }
                 else 
@@ -166,7 +164,7 @@ namespace EtcAbduction
             }
         }
 
-        public static List<Solution> ContextualEtcAbduction(List<Literal> window, Knowledgebase kb, List<Solution> previous, int maxdepth, int beam, int iteration)
+        public static List<Solution> ContextualEtcAbduction(List<Literal> obs, List<Literal> window, Knowledgebase kb, List<Solution> previous, int maxdepth, int beam, int iteration)
         {
             var ln_pr_to_beat = double.NegativeInfinity;
             var n_best = new List<Solution>();
@@ -175,7 +173,7 @@ namespace EtcAbduction
             foreach (Solution previous_solution in previous)
             {
                 var previous_solution_jlpr = JointLnProbability(previous_solution);
-                var context = GetContext(previous_solution, window, kb);
+                var context = GetContext(previous_solution, obs, kb);
                 var list_of_lists = new List<List<Solution>>();
                 foreach (Literal c in window)
                 {

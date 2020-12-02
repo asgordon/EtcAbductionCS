@@ -68,7 +68,7 @@ namespace EtcAbduction
                         this.cached += this.window;
                     }
                     var current_window = this.observables.GetRange(this.cached, this.current - this.cached);
-                    var solution_list = Incremental.ContextualEtcAbduction(current_window, knowledgebase, contexts, depth, beam, current);
+                    var solution_list = Incremental.ContextualEtcAbduction(this.observables, current_window, knowledgebase, contexts, depth, beam, current);
                     if (solution_list.Count > this.beam)
                     {
                         solution_list.RemoveRange(this.beam, solution_list.Count - this.beam);
