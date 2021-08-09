@@ -1,7 +1,6 @@
 // textGenerator.cs - 
 // Andrew S. Gordon
-// September 2019
-// November 2020
+// August 2021
 
 // A template-based text generation utility for EtcAbduction.
 
@@ -11,6 +10,8 @@ using System.Linq;
 
 namespace EtcAbduction
 {
+    using StringList = List<string>; // helpful
+
     public class TextGenerator 
     {
         public Knowledgebase Kb {get; set;}
@@ -19,8 +20,37 @@ namespace EtcAbduction
         public Dictionary<String,List<String>> CommonNouns {get; set;}
         public Dictionary<String,String> Pronouns {get; set;}
 
+        // Ablation studies
+        static bool AblatePronounIntroduction = false;
+        static bool AblateDeterminerSelection = false;
+
+        static List<String> SkolemConstantCommonNouns = new List<String>() {"unknown entity"};
+        // Pronoun directives appear before variables in text literals
+        static HashSet<string> PronounDirectives = new HashSet<string>{
+            "Subject", // HE went
+            "Object", // to HER
+            "DependentPossessive", // at THEIR house  
+            "IndependentPossessive", // which was really HERS
+            "Reflexive" // that she owned by HERSELF.
+            };
+        // Pronoun classes define which pronouns an entity should use
+        // static HashSet<string> PronounClasses = new HashSet<string>{
+        //     "Masculine", // he, him, his, his, himself
+        //     "Feminine", // she, her, her, hers, herself
+        //     "Neuter", // it, it, its, its, itself
+        //     "Plural" // they, them, their, theirs, themselves
+        //     }; 
+        // Text predicates are used in Text Knowledge Bases to direct text generation
+        // static HashSet<string> TextPredicates = new HashSet<string>{
+        //     "proper_noun", // e.g. (proper_noun PERSON1 "Samantha")
+        //     "pronouns", // e.g. (pronouns PERSON1 Feminine)
+        //     "common_noun", // e.g. (common_noun PERSON1 "accountant")
+        //     "text", // e.g. (text Subject ?x "paid the fare to" Object ?y)
+        //     "texta", // e.g. (texta Subject ?x "asked" Object ?y "to pay the fare")
+        //     "textc", // e.g. (textc Subject ?x "paid the fare")
+        // };
+
         // Base class constructor is tied to specific knowledge base and temlate axioms
-    
         public TextGenerator(Knowledgebase kb, Knowledgebase tkb, List<Literal> tobs) {
             this.Kb = kb;
             this.Tkb = tkb;
@@ -35,34 +65,30 @@ namespace EtcAbduction
                     String key = tob.Terms[0].Text;
                     List<String> value = tob.Terms.Skip(1).Select(t => t.Text).ToList(); // terms, not strings.
                     this.ProperNouns.Add(key, value);
-                    //Console.WriteLine($"{key} {value.Count}");
                 }
                 if (tob.Predicate == "pronouns")
                 {
                     String key = tob.Terms[0].Text;
                     String value = tob.Terms[1].Text;
                     this.Pronouns.Add(key, value);
-                    Console.WriteLine($"{key} {value}");
                 }
                 if (tob.Predicate == "common_noun")
                 {
                     String key = tob.Terms[0].Text;
                     List<String> value = tob.Terms.Skip(1).Select(t => t.Text).ToList(); // terms, not strings.
                     this.CommonNouns.Add(key, value);
-                    Console.WriteLine($"{key} {value}");
                 }
             }
+        } 
 
-        }   
-        
         // Get the structure of the given solution
-        List<Entailment> GetEntailments(List<Literal> solution)
+        List<Entailment> Entailments(List<Literal> solution)
         {
             return Forward.Entailments(Kb, solution);
         }
 
         // Select which literals in the graph to use for text generation
-        List<Literal> GetShallowCauses(List<Entailment> entailments, List<Literal> solution, List<Literal> observations)
+        List<Literal> ShallowCauses(List<Entailment> entailments, List<Literal> solution, List<Literal> observations)
         {
             var result = new List<Literal>();
             foreach (Literal ob in observations)
@@ -74,135 +100,168 @@ namespace EtcAbduction
             return result;
         }
 
-        // Apply the text knowledgebase to the selected literals, with the resulting list containing lists of variants for each input literal
-        List<List<Literal>> GetTextLiterals(List<Literal> content)
+        // Apply the text knowlegebase to the selected content, using only the first matching rule
+        List<Literal> TextLiterals(List<Literal> content)
         {
-            var result = new List<List<Literal>>(); // A list of variations for each content literal
+            var result = new List<Literal>();
             foreach (Literal contentLiteral in content)
             {
-                var variations = new List<Literal>();
                 var textEntailments = Forward.Entailments(Tkb, new List<Literal>() {contentLiteral});
                 foreach (Entailment textEntailment in textEntailments)
                 {
-                    Literal textLiteral = textEntailment.Entailed;
-                    if (textLiteral.Predicate == "text") // what about textc?
+                    if (textEntailment.Entailed.Predicate == "text") // what about textc?
                     {
-                        variations.Add(textLiteral);
+                        result.Add(textEntailment.Entailed);
+                        break; // found one, so break out of the inner foreach loop
                     }
                 }
-                result.Add(variations);
             }
             return result;
         }
-        
-        // Convert each text literal to a list of strings (a "realization")
-        List<List<List<string>>> ConvertToRealizations(List<List<Literal>> textLiterals)
+
+        // Convert each text literal into a realization, i.e. a list of strings
+        List<StringList> Realizations(List<Literal> textLiterals)
         {
-            var result = new List<List<List<string>>>();
-            foreach (List<Literal> variations in textLiterals)
+            var result = new List<StringList>();
+            foreach (Literal textLiteral in textLiterals)
             {
-                var options = new List<List<string>>();
-                foreach (Literal variation in variations)
+                result.Add(textLiteral.Terms.Select(x => x.Repr()).ToList());
+            }
+            return result;
+        }
+
+        // Rewrite realizations to introduce pronouns, proper nouns, and common nouns
+        List<StringList> Rewrite(List<StringList> realizations)
+        {
+            var withPronouns = SwapPronouns(realizations);
+            var withProperNouns = new List<StringList>();
+            foreach(StringList realization in withPronouns)
+            {
+                withProperNouns.Add(SwapProperNouns(realization));
+            }
+            var result = SwapCommonNouns(withProperNouns);
+            return result;
+        }
+
+        // Swap pronouns based on reader knowledge of pronoun class
+        List<StringList> SwapPronouns(List<StringList> realizations)
+        {
+            var known = new HashSet<string>(); // reader knows pronoun classes of these entities
+            HashSet<string> previous; // who participated in the previous sentence
+            var current = new HashSet<string>(); // who participated in the current sentence thus far
+            var result = new List<StringList>();
+
+            for (int r = 0; r < realizations.Count; r++) 
+            {
+                previous = current; 
+                current = new HashSet<string>(); 
+                StringList realization = realizations[r];
+                for (int i = 0; i < realization.Count; i++) 
                 {
-                    options.Add(variation.Terms.Select(x => x.Repr()).ToList());
+                    if (PronounDirectives.Contains(realization[i]))
+                    {
+                        String directive = realization[i];
+                        realization[i] = ""; // hide directive
+                        i++; // increment i, will skip over the next argument in the for loop
+                        string entity = realization[i];
+                        string pronounClass = PronounClass(entity); 
+                        if (CanSwapPronoun(entity, directive, previous, current, known))
+                        {
+                            known.Add(entity); 
+                            realization[i] = Pronoun(directive, pronounClass); // swap
+                        }
+                        current.Add(entity); 
+                    }
                 }
-                result.Add(options);
+                result.Add(realization);
             }
             return result;
         }
 
-        // Rewrite each list of strings (realization) by replacing pronouns, common nouns, and proper nouns
-        List<List<List<string>>> RewriteRealizations(List<List<List<string>>> listOfOptionsOfRealizations)
+        // Get the pronoun class of an entity, if it has ben provided
+        string PronounClass(string entity)
         {
-            var result = new List<List<List<string>>>();
-            foreach (List<List<string>> options in listOfOptionsOfRealizations)
-            {
-                 var newOptions = new List<List<string>>();
-                 foreach (List<string> realization in options)
-                 {
-                     var newRealization = SwapPronouns(realization);
-                     newRealization = SwapProperNouns(newRealization);
-                     newRealization = SwapCommonNouns(newRealization);
-                     newOptions.Add(newRealization);
-                 }
-                 result.Add(newOptions);
-            }
-            return result;
+            if (this.Pronouns.ContainsKey(entity)) return this.Pronouns[entity];
+            return "Neuter"; // default
         }
 
-        // Swap prounouns base don the prunoun class
-        public List<String> SwapPronouns(List<String> realization)
+        // Determine if a pronoun can be used given the current context
+        bool CanSwapPronoun(string entity, string directive, HashSet<string> previous, HashSet<string> current, HashSet<string> known)
         {
-            for (int i = 0; i < realization.Count; i++)
+            if (AblatePronounIntroduction) return false; 
+            HashSet<string> union = new HashSet<string>();
+            union.UnionWith(previous);
+            union.UnionWith(current);
+            string unionstring = "";
+            foreach (string item in union) { unionstring += " " + item; }
+            if ((directive != "Subject") && (directive != "Object")) return true; // why not
+            if (!union.Contains(entity)) return false; // not recently seen
+            foreach (string member in union)
             {
-                if (realization[i] == "SubjectPronoun" ||
-                    realization[i] == "ObjectPronoun" ||
-                    realization[i] == "DependentPossessivePronoun" ||
-                    realization[i] == "IndependentPossessivePronoun" ||
-                    realization[i] == "ReflexivePronoun")                    
+                if ((member != entity) && (PronounClass(member) == PronounClass(entity))) return false; // would be ambiguous
+            }
+            if (known.Contains(entity)) return true; // unambiguous
+            HashSet<string> unknowns = new HashSet<string>();
+            unknowns.UnionWith(union); // start with the union
+            unknowns.ExceptWith(known); // remove all the known
+            if (unknowns.Count > 1) return false; // Cannot introduce because than 1 unknown 
+            return true; // All good!
+        }
+
+        // Identify the pronoun to use for a given directive and pronoun class
+        string Pronoun(string directive, string pronounClass)
+        {
+            if (directive == "Subject")
+            {
+                switch(pronounClass)
                 {
-                    String directive = realization[i];
-                    realization[i] = ""; // hide
-                    i++; // increment i, will skip the next argument
-                    String pronounClass = "Neuter"; // default
-                    if (this.Pronouns.ContainsKey(realization[i]))
-                    {
-                        pronounClass = this.Pronouns[realization[i]];
-                    }
-                    if (directive == "SubjectPronoun")
-                    {
-                        switch(pronounClass)
-                        {
-                            case "Masculine": realization[i] = "he"; break;
-                            case "Feminine": realization[i] = "she"; break;
-                            case "Neuter": realization[i] = "it"; break;
-                            case "Plural": realization[i] = "they"; break;
-                        }
-                    }
-                    if (directive == "ObjectPronoun")
-                    {
-                        switch(pronounClass)
-                        {
-                            case "Masculine": realization[i] = "him"; break;
-                            case "Feminine": realization[i] = "her"; break;
-                            case "Neuter": realization[i] = "it"; break;
-                            case "Plural": realization[i] = "them"; break;
-                        }
-                    }
-                    if (directive == "DependentPossessivePronoun")
-                    {
-                        switch(pronounClass)
-                        {
-                            case "Masculine": realization[i] = "his"; break;
-                            case "Feminine": realization[i] = "her"; break;
-                            case "Neuter": realization[i] = "its"; break;
-                            case "Plural": realization[i] = "their"; break;
-                        }
-                    }
-                    if (directive == "IndependentPossessivePronoun")
-                    {
-                        switch(pronounClass)
-                        {
-                            case "Masculine": realization[i] = "his"; break;
-                            case "Feminine": realization[i] = "hers"; break;
-                            case "Neuter": realization[i] = "its"; break; // wrong
-                            case "Plural": realization[i] = "theirs"; break;
-                        }
-                    }
-                    if (directive == "ReflexivePronoun")
-                    {
-                        switch(pronounClass)
-                        {
-                            case "Masculine": realization[i] = "himself"; break;
-                            case "Feminine": realization[i] = "herself"; break;
-                            case "Neuter": realization[i] = "itself"; break; 
-                            case "Plural": realization[i] = "themselves"; break; // or themself
-                        }
-                    }
+                    case "Masculine": return "he";
+                    case "Feminine": return "she"; 
+                    case "Neuter": return "it";
+                    case "Plural": return "they";
                 }
             }
-            return realization;
-
+            if (directive == "Object")
+            {
+                switch(pronounClass)
+                {
+                    case "Masculine": return "him";
+                    case "Feminine": return "her";
+                    case "Neuter": return "it";
+                    case "Plural": return "them";
+                }
+            }
+            if (directive == "DependentPossessive")
+            {
+                switch(pronounClass)
+                {
+                    case "Masculine": return "his";
+                    case "Feminine": return "her"; 
+                    case "Neuter": return "its";
+                    case "Plural": return "their";
+                }
+            }
+            if (directive == "IndependentPossessive")
+            {
+                switch(pronounClass)
+                {
+                    case "Masculine": return "his"; 
+                    case "Feminine": return "hers";
+                    case "Neuter": return "its"; // wrong?
+                    case "Plural": return "theirs";
+                }
+            }
+            if (directive == "Reflexive")
+            {
+                switch(pronounClass)
+                {
+                    case "Masculine": return "himself"; 
+                    case "Feminine": return "herself"; 
+                    case "Neuter": return "itself";
+                    case "Plural": return "themselves"; // or themself
+                }
+            }
+            return ("???");
         }
 
         // Swap constants for proper nouns based on any names provided
@@ -215,38 +274,94 @@ namespace EtcAbduction
                     realization[i] = this.ProperNouns[realization[i]][0];
                 }
             }
-            
             return realization;
         }
 
-        // Swap constants for common nouns based on any names provided
-        public List<String> SwapCommonNouns(List<String> realization)
+        // Simple version for swapping common nouns and adding a determiner. A better version would add "another" when introducing a new entity that shares a previously used common noun.
+        List<StringList> SwapCommonNouns(List<StringList> realizations)
         {
-            String determiner = "a";
-            for (int i = 0; i < realization.Count; i++)
+            HashSet<string> introduced = new HashSet<string>(); // Who has been introduced  
+            HashSet<string> introducedNouns = new HashSet<string>(); // what are their nouns
+            List<StringList> result = new List<StringList>();
+            foreach (StringList realization in realizations)
             {
-                if (this.CommonNouns.ContainsKey(realization[i]))
+                for (int i = 0; i < realization.Count; i++)
                 {
-                    realization[i] = determiner + " " + this.CommonNouns[realization[i]][0];
+                    string entity = realization[i];
+                    // Handle Skolem constants, e.g. $3:2 or $4
+                    if (IsSkolemConstant(entity))
+                    {
+                        CommonNouns[entity] = SkolemConstantCommonNouns;
+                    }
+                    // 
+                    if (this.CommonNouns.ContainsKey(entity))
+                    {
+                        if (introduced.Contains(entity))
+                        {
+                            realization[i] = AddDefiniteArticle(this.CommonNouns[entity][0]);
+                        }
+                        else 
+                        {
+                            if (introducedNouns.Contains(this.CommonNouns[entity][0]))
+                            {
+                                realization[i] = AddAdditiveDeterminer(this.CommonNouns[entity][0]);
+                            }
+                            else
+                            {
+                                realization[i] = AddIndefiniteArticle(this.CommonNouns[entity][0]);
+                            }
+                            introduced.Add(entity);
+                            introducedNouns.Add(this.CommonNouns[entity][0]);
+                        }
+                    }
+                    
                 }
+                result.Add(realization);
             }
-            
-            return realization;
+            return result;
+        }
+
+        bool IsSkolemConstant(string entity)
+        {
+            return (entity.Length != 0) && entity[0] == '$';
+        }
+
+        // Definite articles, e.g., the triangle, the arrow, the American soldier
+        String AddDefiniteArticle(string commonNoun)
+        {
+            if (AblateDeterminerSelection) return AddIndefiniteArticle(commonNoun);
+            return "the " + commonNoun;
+        }
+
+        // Indefinite articles, e.g., a triangle, an arrow, an American soldier
+        String AddIndefiniteArticle(string commonNoun)
+        {
+            List<char> vowelish = new List<char>() {'a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U'};
+            if (vowelish.Contains(commonNoun[0]))
+            {
+                return "an " + commonNoun; 
+            }
+            else
+            {
+                return "a " + commonNoun;
+            }
+        }
+
+        // Additive determiner (another)
+        String AddAdditiveDeterminer(string commonNoun)
+        {
+            if (AblateDeterminerSelection) return AddIndefiniteArticle(commonNoun);
+            return "another " + commonNoun;
         }
 
 
-        // Convert each realization to a single string / sentence.
-        List<List<string>> RewriteAsSentences(List<List<List<string>>> listOfOptionsOfRealizations)
+        // Convert (rewritten) realizations into strings
+        List<string> Sentences(List<StringList> rewrites)
         {
-            var result = new List<List<string>>();
-            foreach (List<List<string>> options in listOfOptionsOfRealizations)
+            var result = new List<string>();
+            foreach (StringList parts in rewrites)
             {
-                var newOptions = new List<string>();
-                foreach (List<string> parts in options)
-                {
-                    newOptions.Add(Cleanup(String.Join(" ",parts)));
-                }
-                result.Add(newOptions);
+                result.Add(Cleanup(String.Join(" ", parts)));
             }
             return result;
         }
@@ -263,73 +378,46 @@ namespace EtcAbduction
             {
                 messy = messy.Replace(" ,", ",");
             }
+            while (messy.Contains(" 's "))
+            {
+                messy = messy.Replace(" 's ", "'s ");
+            }
             return messy.First().ToString().ToUpper() + messy.Substring(1) + ". "; // final space
         }
 
-        // Compose sentences into a documents, with a different variant for every available option
-        List<string> ComposeVariations(List<List<string>> listOfOptionsOfSentences)
+        // Compose a list of sentences into a paragraph of text
+        string Compose(List<string> sentences)
         {
-            var variations = new List<string>(){ "" }; // one empty realization to start
-            foreach (List<string> options in listOfOptionsOfSentences)
+            string result = "";
+            foreach (string sentence in sentences)
             {
-                foreach (string option in options)
-                {
-                    var newVariations = new List<string>();
-                    foreach (string previous in variations)
-                    {
-                        newVariations.Add(previous + option);
-                    }
-                    variations = newVariations;
-                }
+                result += sentence;
             }
-            return variations;
+            return result;
         }
 
-        // Bundle the core generation functions into a single call
-        List<string> GenerateVariations(List<Literal> content)
+        // Version 2 of the text generation algrotihm (2021)
+        string GenerateV2(List<Literal> solution, List<Literal> observations)
         {
-            var textLiterals = GetTextLiterals(content); // requires textkb
-            var realizations = ConvertToRealizations(textLiterals);
-            var rewrites = RewriteRealizations(realizations); // requires nouns
-            var sentences = RewriteAsSentences(rewrites);
-            var variations = ComposeVariations(sentences);
-            return variations;
+            // Shallow causes, no ranking, pronouns 
+            List<Literal> content = ShallowCauses(Entailments(solution), solution, observations);
+            List<Literal> textLiterals = TextLiterals(content);
+            List<StringList> realizations = Realizations(textLiterals);
+            List<StringList> rewrites = Rewrite(realizations);
+            List<string> sentences = Sentences(rewrites);
+            return Compose(sentences);
         }
 
-        // Provide a convienient generate function that provides a couple of options.
+        // Public function for generating text
         public string Generate(List<Literal> solution, List<Literal> observations, string selector = "shallow_causes", string ranker = "longest")
         {
-            // Select content
-            List<Literal> content;
-            switch (selector)
-            {
-                case "shallow_causes":
-                default:
-                    content = GetShallowCauses(GetEntailments(solution), solution, observations);
-                    break;
-            }
-
-            // Generate variations
-            List<String> variations = GenerateVariations(content);
-
-            // Rank variations
-            switch (ranker)
-            {
-                case "all":
-                    variations = new List<String> {  String.Join("\n",variations) };
-                    break;
-                case "shortest":
-                    variations.Sort((a, b) => a.Length.CompareTo(b.Length));
-                    break;
-                case "longest":
-                default:
-                    variations.Sort((a, b) => b.Length.CompareTo(a.Length)); // reversed
-                    break;
-            }
-
-            // Return highest-ranked variation
-            return variations[0];
+            return GenerateV2(solution, observations);
         }
-
     }
 }
+
+// Future versions: determiners, clause chains
+// Correctly handle 's (singular and plural possessive nouns)
+// Correctly recognize when entity is in previous or current sentence when not using pronouns.
+// Repeated events
+// Variations on names
