@@ -25,6 +25,7 @@ namespace EtcAbduction
         static bool AblateDeterminerSelection = false;
 
         static List<String> SkolemConstantCommonNouns = new List<String>() {"unknown entity"};
+        
         // Pronoun directives appear before variables in text literals
         static HashSet<string> PronounDirectives = new HashSet<string>{
             "Subject", // HE went
@@ -33,6 +34,7 @@ namespace EtcAbduction
             "IndependentPossessive", // which was really HERS
             "Reflexive" // that she owned by HERSELF.
             };
+        
         // Pronoun classes define which pronouns an entity should use
         // static HashSet<string> PronounClasses = new HashSet<string>{
         //     "Masculine", // he, him, his, his, himself
@@ -40,6 +42,7 @@ namespace EtcAbduction
         //     "Neuter", // it, it, its, its, itself
         //     "Plural" // they, them, their, theirs, themselves
         //     }; 
+        
         // Text predicates are used in Text Knowledge Bases to direct text generation
         // static HashSet<string> TextPredicates = new HashSet<string>{
         //     "proper_noun", // e.g. (proper_noun PERSON1 "Samantha")
@@ -189,22 +192,29 @@ namespace EtcAbduction
         bool CanSwapPronoun(string entity, string directive, HashSet<string> previous, HashSet<string> current, HashSet<string> known)
         {
             if (AblatePronounIntroduction) return false; 
+            // No, if entity not already seen in current or previous sentence
             HashSet<string> union = new HashSet<string>();
             union.UnionWith(previous);
             union.UnionWith(current);
-            string unionstring = "";
-            foreach (string item in union) { unionstring += " " + item; }
             if ((directive != "Subject") && (directive != "Object")) return true; // why not
             if (!union.Contains(entity)) return false; // not recently seen
+            // No, if entity shares the same pronoun class as a recently seen entity
             foreach (string member in union)
             {
                 if ((member != entity) && (PronounClass(member) == PronounClass(entity))) return false; // would be ambiguous
             }
+            // Yes, if entity's class is known already, assuming all plurals and neuters are known. 
+            foreach (string member in union)
+            {
+                if ((PronounClass(entity) == "Plural") || (PronounClass(entity) == "Neuter")) known.Add(entity);
+            }
             if (known.Contains(entity)) return true; // unambiguous
+            // No, if there is more than 1 entity with an unknown class
             HashSet<string> unknowns = new HashSet<string>();
             unknowns.UnionWith(union); // start with the union
             unknowns.ExceptWith(known); // remove all the known
-            if (unknowns.Count > 1) return false; // Cannot introduce because than 1 unknown 
+            if (unknowns.Count > 1) return false; // Cannot introduce because more than 1 unknown 
+            // Yes, all good!
             return true; // All good!
         }
 
