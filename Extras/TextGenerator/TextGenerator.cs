@@ -96,9 +96,16 @@ namespace EtcAbduction
             var result = new List<Literal>();
             foreach (Literal ob in observations)
             {
-                var entailment = entailments.First<EtcAbduction.Entailment>(ent => ob.Equals(ent.Entailed));
-                var etc = entailment.Triggers.First<EtcAbduction.Literal>(lit => solution.Contains(lit));
-                result.Add(etc);
+                if (ob.IsEtceteraLiteral) // useful.
+                {
+                    result.Add(ob);
+                }
+                else
+                {
+                    var entailment = entailments.First<EtcAbduction.Entailment>(ent => ob.Equals(ent.Entailed));
+                    var etc = entailment.Triggers.First<EtcAbduction.Literal>(lit => solution.Contains(lit));
+                    result.Add(etc);
+                }
             }
             return result;
         }
@@ -406,11 +413,9 @@ namespace EtcAbduction
             return result;
         }
 
-        // Version 2 of the text generation algrotihm (2021)
-        string GenerateV2(List<Literal> solution, List<Literal> observations)
+        // Version 3 of the text generation algorithm (2022), accepts ordered content as input
+        string GenerateV3(List<Literal> content)
         {
-            // Shallow causes, no ranking, pronouns 
-            List<Literal> content = ShallowCauses(Entailments(solution), solution, observations);
             List<Literal> textLiterals = TextLiterals(content);
             List<StringList> realizations = Realizations(textLiterals);
             List<StringList> rewrites = Rewrite(realizations);
@@ -418,11 +423,18 @@ namespace EtcAbduction
             return Compose(sentences);
         }
 
+        // Public function for converting content into text
+        public string ConvertToText(List<Literal> content)
+        {
+            return GenerateV3(content);
+        }
+
         // Public function for generating text
         public string Generate(List<Literal> solution, List<Literal> observations, string selector = "shallow_causes", string ranker = "longest")
         {
-            return GenerateV2(solution, observations);
-        }
+            List<Literal> content = ShallowCauses(Entailments(solution), solution, observations);
+            return ConvertToText(content);
+        }   
     }
 }
 
