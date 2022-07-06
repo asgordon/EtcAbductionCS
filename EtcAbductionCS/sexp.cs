@@ -119,7 +119,7 @@ namespace EtcAbduction
         {
             var res = "";
             var cur_char = this.NextChar();
-            while (" ;)\n\t".Contains(cur_char) == false)
+            while (" ;())\n\t".Contains(cur_char) == false)
             {
                 res += this.ConsumeChar();
                 cur_char = this.NextChar();
@@ -135,7 +135,7 @@ namespace EtcAbduction
         {
             var res = "";
             var cur_char = this.NextChar();
-            while (" ;)\n\t".Contains(cur_char) == false)
+            while (" ;())\n\t".Contains(cur_char) == false)
             {
                 res += this.ConsumeChar();
                 cur_char = this.NextChar();
