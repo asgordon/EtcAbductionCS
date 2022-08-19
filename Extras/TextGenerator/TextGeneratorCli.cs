@@ -35,6 +35,7 @@ namespace EtcAbduction
         public string Output_path {get; set;}
 
         public string Ranker {get; set;}
+        public string Method { get; set; }
 
         public bool Help_flag {get; set;}
 
@@ -43,6 +44,7 @@ namespace EtcAbduction
 
             this.Help_flag = false;
             this.Ranker = "default";
+            this.Method = "shallow_causes";
 
             for (int i = 0; i < args.Length; i++) 
             {
@@ -65,6 +67,11 @@ namespace EtcAbduction
                 {
                     i += 1;
                     this.Ranker = args[i];
+                }
+                else if (args[i] == "-m" || args[i] == "--method")
+                {
+                    i += 1;
+                    this.Method = args[i];
                 }
                 else if (args[i] == "-s" || args[i] == "--solution")
                 {
@@ -140,7 +147,7 @@ namespace EtcAbduction
 
             var result = "";    
             
-            result = $"{String.Join(" || ",tg.Generate(solution, obs, ranker: args.Ranker ))}";                         
+            result = $"{String.Join(" || ",tg.Generate(solution, obs, selector: args.Method, ranker: args.Ranker ))}";                         
         
             // output
             if (args.Output_path != null)

@@ -1,6 +1,6 @@
 // textGenerator.cs - 
 // Andrew S. Gordon
-// August 2021
+// August 2022
 
 // A template-based text generation utility for EtcAbduction.
 
@@ -91,6 +91,8 @@ namespace EtcAbduction
         }
 
         // Select which literals in the graph to use for text generation
+
+        // Method "Shallow Causes", selecting the immediate justification of each observation
         List<Literal> ShallowCauses(List<Entailment> entailments, List<Literal> solution, List<Literal> observations)
         {
             var result = new List<Literal>();
@@ -102,12 +104,75 @@ namespace EtcAbduction
                 }
                 else
                 {
-                    var entailment = entailments.First<EtcAbduction.Entailment>(ent => ob.Equals(ent.Entailed));
-                    var etc = entailment.Triggers.First<EtcAbduction.Literal>(lit => solution.Contains(lit));
-                    result.Add(etc);
+                    result.Add(EntailmentWithConsequent(entailments, ob).Triggers.First<EtcAbduction.Literal>(lit => lit.IsEtceteraLiteral)); 
                 }
             }
             return result;
+        }
+
+        // Method "Latest News", selecting the bottom-up justification for the most recent observation
+        List<Literal> LatestNews(List<Entailment> entailments, List<Literal> solution, List<Literal> observations)
+        {
+            var latest = new List<Literal>();
+            latest.Add(observations.Last());  // only the last observable to be considered.
+            return (UpwardStripes(entailments, solution, latest));
+        }
+
+        // Method "Upward Stripes", selecting the bottom-up justification for each observation in order
+        List<Literal> UpwardStripes(List<Entailment> entailments, List<Literal> solution, List<Literal> observations)
+        {
+            var result = new List<Literal>();
+            var consequents = new List<Literal>();
+            foreach (Literal obs in observations)
+            {
+                consequents.Add(obs);
+                while (consequents.Count > 0)
+                {
+                    var element = consequents[0];
+                    consequents.RemoveAt(0); // pop
+
+                    if (element.IsEtceteraLiteral) // got one
+                    {
+                        if (!Contains(result, element))
+                        {
+                            result.Add(element);
+                        }
+                    }
+                    else
+                    {
+                        var entailment = EntailmentWithConsequent(entailments, element);
+                        foreach (Literal trigger in entailment.Triggers)
+                        {
+                            consequents.Add(trigger);
+                        }
+                    }
+                }
+            }
+            return result;
+        }
+
+        Entailment EntailmentWithConsequent(List<Entailment> entailments, Literal consequent)
+        {
+            foreach (Entailment entailment in entailments)
+            {
+                if (entailment.Entailed.Equals(consequent)) // Repr() == consequent.Repr())
+                {
+                    return entailment;
+                }
+            }
+            return null;
+        }
+
+        bool Contains(List<Literal> literals, Literal literal)
+        {
+            foreach (Literal item in literals)
+            {
+                if (item.Equals(literal))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         // Apply the text knowlegebase to the selected content, using only the first matching rule
@@ -432,7 +497,19 @@ namespace EtcAbduction
         // Public function for generating text
         public string Generate(List<Literal> solution, List<Literal> observations, string selector = "shallow_causes", string ranker = "longest")
         {
-            List<Literal> content = ShallowCauses(Entailments(solution), solution, observations);
+            List<Literal> content = null;
+            if (selector == "latest_news")
+            {
+                content = LatestNews(Entailments(solution), solution, observations);
+            }
+            else if (selector == "upward_stripes")
+            {
+                content = UpwardStripes(Entailments(solution), solution, observations);
+            }
+            else // "shallow_causes"
+            {
+                content = ShallowCauses(Entailments(solution), solution, observations);
+            }
             return ConvertToText(content);
         }   
     }
